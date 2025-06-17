@@ -1,0 +1,4 @@
+app/.env
+app/__pycache__/config.cpython-313.pyc
+app/__pycache__/dependencies.cpython-313.pyc
+app/__pycache__/main.cpython-313.pyc

@@ -1,0 +1,52 @@
+# main.py
+from fastapi import FastAPI
+#config from env
+from config import settings
+import dependencies as dep
+
+class RAGApplication:
+    def __init__(self):
+        self.app = FastAPI(
+            title=settings.app_name,
+            description="Distributed RAG system on Raspberry Pi cluster",
+            version=settings.app_version,
+            debug=settings.debug
+        )
+
+        self.setup_routes()
+    
+    def setup_routes(self):
+        @self.app.get("/")
+        async def root():
+            return {"message": "RAG Chatbot is running!"}
+        
+        @self.app.get("/health")
+        async def health_check():
+            return {
+                "status":   "healthy",
+                "service":  settings.app_name,
+                "verison":  settings.app_version,
+                "debug":    settings.debug
+                }
+        @self.app.get("/test-deps")
+        async def test_dependencies(
+            db:dep.DatabaseDep,
+            llama:dep.LlamaDep,
+            embedding:dep.EmbeddingDep):
+            return{"db": db,"llama":llama,"embedding":embedding} 
+
+    def setup_cors(self):
+        origins = settings.cors_origins.split(",") if settings.cors_origins == "" else ["*"]
+        self.app.add_middleware(
+            CORSMiddleware, # type: ignore
+            allow_origins=origins,
+            allow_credentials=settings.cors_allow_credentials,
+            allow_methods = ["*"],
+            allow_headers = ["*"]
+        )
+    
+
+
+# Create the application instance
+rag_app = RAGApplication()
+app = rag_app.app  # This is what uvicorn needs

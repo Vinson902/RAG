@@ -5,7 +5,10 @@ from core.database import DatabaseManager,get_database_manager
 
 async def get_database() -> DatabaseManager:
     """Database dependency for FastAPI endpoints"""
-    return await get_database_manager()
+    db = await get_database_manager()
+    if await db.connect():
+        return db
+    return None
 
 async def get_llama_client():
     """LLama client dependency"""

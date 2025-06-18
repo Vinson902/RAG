@@ -2,7 +2,7 @@ import os, logging, socket
 from typing import Optional
 from pydantic_settings import BaseSettings # type: ignore
 
-class PodContextFilter(logging.Filter):
+'''class PodContextFilter(logging.Filter):
     """Add pod and node context to all log records"""
 
     def __init__(self):
@@ -15,7 +15,7 @@ class PodContextFilter(logging.Filter):
         record.pod_name =self.pod_name
         record.node_name = self.node_name
         record.service_name = self.service_name
-        return True
+        return True'''
     
 
 
@@ -53,17 +53,24 @@ class Settings(BaseSettings):
 
 def setup_logging():   # To be configured!
     """Configure logging with node and pod context"""
-
-    pod_filter = PodContextFilter()
+    #pod_filter = PodContextFilter()
     logging.basicConfig(
-        level=getattr(logging,settings.log_level),
-        format=f'%(asctime)s - %(pod_name)s@%(node_name)s - %(name)s - %(levelname)s - %(message)s',
+        level=getattr(logging, settings.log_level.upper(), logging.DEBUG),
+        format=f'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(settings.log_file_path)
         ]
     )
-    
-    logging.getLogger().addFilter(pod_filter)
+    logging.getLogger("asyncpg").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    # Application loggers
+    logging.getLogger("core.database").setLevel(logging.DEBUG)  
+    logging.getLogger("core.llama_client").setLevel(logging.INFO)
+
+    #Add filter to add information about pods and nodes
+    #logging.getLogger().addFilter(pod_filter)
+
+    logging.info("Logging configuration completed")
 # Global settings instance
 settings = Settings()

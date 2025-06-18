@@ -31,20 +31,30 @@ class RAGApplication:
 
         @self.app.get("/health")
         async def health_check(db: dep.DatabaseDep):
+            if db == None:
+                return {
+                "status":   "degraded",
+                "service":  settings.app_name,
+                "verison":  settings.app_version,
+                "debug":    settings.debug,
+                "database": "unavailable",
+                "logging_level": settings.log_level
+                }
             is_healthy = await db.health_check()
             return {
                 "status":   "healthy",
                 "service":  settings.app_name,
                 "verison":  settings.app_version,
                 "debug":    settings.debug,
-                "database": "healthy" if is_healthy else "unhealthy"
+                "database": "healthy" if is_healthy else "unhealthy",
+                "logging_level": settings.log_level
                 }
         @self.app.get("/test-deps")
         async def test_dependencies(
             db:dep.DatabaseDep,
             llama:dep.LlamaDep,
             embedding:dep.EmbeddingDep):
-            return{"db": db,"llama":llama,"embedding":embedding} 
+            return{"db": db.__class__.__name__,"llama":llama.__class__.__name__,"embedding":embedding.__class__.__name__} 
 
     def setup_cors(self):
         origins = settings.cors_origins.split(",") if settings.cors_origins == "" else ["*"]

@@ -1,7 +1,8 @@
 # main.py
 from fastapi import FastAPI
 #config from env
-from config import settings
+from core.database import DatabaseManager, close_database_manager
+from config import settings, setup_logging
 import dependencies as dep
 
 class RAGApplication:
@@ -16,17 +17,27 @@ class RAGApplication:
         self.setup_routes()
     
     def setup_routes(self):
+        
+       #@self.on_event("shutdown")
+       #async def shutdown_event():
+       #    """Clean up database connections on app shutdown"""
+       #    await close_database_manager()
+
+
         @self.app.get("/")
         async def root():
             return {"message": "RAG Chatbot is running!"}
         
+
         @self.app.get("/health")
-        async def health_check():
+        async def health_check(db: dep.DatabaseDep):
+            is_healthy = await db.health_check()
             return {
                 "status":   "healthy",
                 "service":  settings.app_name,
                 "verison":  settings.app_version,
-                "debug":    settings.debug
+                "debug":    settings.debug,
+                "database": "healthy" if is_healthy else "unhealthy"
                 }
         @self.app.get("/test-deps")
         async def test_dependencies(
@@ -48,5 +59,6 @@ class RAGApplication:
 
 
 # Create the application instance
+setup_logging()
 rag_app = RAGApplication()
 app = rag_app.app  # This is what uvicorn needs

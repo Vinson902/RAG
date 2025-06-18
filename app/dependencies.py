@@ -1,10 +1,11 @@
 from typing import Annotated
 from fastapi import Depends
 from config import settings
+from core.database import DatabaseManager,get_database_manager
 
-async def get_database(): #async being used to retrive information from remote source
-    """Database connection dependency"""
-    return {"type":"database", "status": "not_implemented"}
+async def get_database() -> DatabaseManager:
+    """Database dependency for FastAPI endpoints"""
+    return await get_database_manager()
 
 async def get_llama_client():
     """LLama client dependency"""

@@ -1,10 +1,33 @@
-import os
+import os, logging, socket
 from typing import Optional
 from pydantic_settings import BaseSettings # type: ignore
+
+class PodContextFilter(logging.Filter):
+    """Add pod and node context to all log records"""
+
+    def __init__(self):
+        super().__init__()
+        self.pod_name = os.getenv('POD_NAME','unknown-name')
+        self.node_name = os.getenv("NODE_NAME",socket.gethostname())
+        self.service_name = os.getenv('SERVICE_NAME', 'unknown-service')
+
+    def filter(self,record):
+        record.pod_name =self.pod_name
+        record.node_name = self.node_name
+        record.service_name = self.service_name
+        return True
+    
 
 
 #.env is actual settings, this file is defaults settigns in case .env is inaccessable 
 class Settings(BaseSettings):
+
+
+    #Logging settings
+    log_level: str = "INFO"
+    log_file_path :str = "logs/RAG-app.log"
+
+
     # Database
     database_url: str = "postgresql://user:pass@localhost/db"
     
@@ -28,5 +51,19 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
+def setup_logging():   # To be configured!
+    """Configure logging with node and pod context"""
+
+    pod_filter = PodContextFilter()
+    logging.basicConfig(
+        level=getattr(logging,settings.log_level),
+        format=f'%(asctime)s - %(pod_name)s@%(node_name)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(settings.log_file_path)
+        ]
+    )
+    
+    logging.getLogger().addFilter(pod_filter)
 # Global settings instance
 settings = Settings()

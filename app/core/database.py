@@ -78,6 +78,13 @@ class DatabaseManager(DatabaseManagerBase):
         self.pool: Optional[Pool] = None
 
 
+        self.expected_dims = {          # Known embedding models and their dimensions
+        "all-MiniLM-L6-v2": 384,        # Redesign 
+        "all-mpnet-base-v2": 768,
+        "sentence-t5-base": 768
+        }
+
+
     async def connect(self) -> None:
         """Initialize connection pool"""
         async def _connect():
@@ -156,23 +163,17 @@ class DatabaseManager(DatabaseManagerBase):
                     ON documents(embedding_model)
                 """)
                 
-                # Create vector similarity index
+                # Create vector similarity index 
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS documents_embedding_idx 
-                    ON documents USING ivfflat (embedding vector_cosine_ops) 
-                    WITH (lists = 100)
+                    CREATE INDEX IF NOT EXISTS documents_embedding_idx          # Divides existing entries into clusters 
+                    ON documents USING ivfflat (embedding vector_cosine_ops)    # with 100 entries per cluster
+                    WITH (lists = 100)                                          # used for quick search
                 """)
                 
                 # Create text search index
                 await conn.execute("""
                     CREATE INDEX IF NOT EXISTS documents_content_idx 
                     ON documents USING gin(to_tsvector('english', content))
-                """)
-                
-                # Create metadata index
-                await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS documents_metadata_idx 
-                    ON documents USING gin(metadata)
                 """)
                 
                 logger.info("Database schema initialization completed")
@@ -186,18 +187,7 @@ class DatabaseManager(DatabaseManagerBase):
                             metadata: Dict[str, Any], embedding_model: str) -> bool:
         """Insert document with embedding"""
         
-        ###
-        ### Redesign 
-        ###
-
-        expected_dims = {           # Known embedding models and their dimensions
-        "all-MiniLM-L6-v2": 384,
-        "all-mpnet-base-v2": 768,
-        "sentence-t5-base": 768
-        }
-
-
-        expected_dim = expected_dims.get(embedding_model,384) # all-MiniLM-L6-v2 should be used by default
+        expected_dim = self.expected_dims.get(embedding_model,384) # all-MiniLM-L6-v2 should be used by default
         # Validate embedding dimensions
         if len(embedding) != expected_dim:
             raise ValueError(f"Embedding for {embedding_model} should be {expected_dim}, got {len(embedding)}")
@@ -300,18 +290,90 @@ class DatabaseManager(DatabaseManagerBase):
             self.logger.error(f"Failed to retrieve document {doc_id}: {e}")
             return None
 
-    async def search_similar(self, query_embedding: List[float], embedding_model: str, 
-                            limit: int = 5) -> List[Dict[str, Any]]:
-        """Find similar documents using vector search - ONLY within the same embedding model using cosine distance"""
 
+    async def search_similar(self, query_embedding: List[float], embedding_model: str, 
+                        limit: int = 5) -> List[Dict[str, Any]]:
+        """Find similar documents using vector search within same embedding model"""
+
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+
+        expected_dim = self.expected_dims.get(embedding_model, 384)
+        if len(query_embedding) != expected_dim:
+            raise ValueError(
+                f"Query embedding for model '{embedding_model}' must be {expected_dim}-dimensional, got {len(query_embedding)}"
+            )
+
+        # Validate limit parameter
+        if limit <= 0 or limit > 100:
+            raise ValueError("Limit must be between 1 and 100")
+
+        # Validate embedding values
+        if not all(isinstance(x, (int, float)) for x in query_embedding):
+            raise ValueError("All embedding values must be numeric")
+
+        # SQL query with pgvector cosine similarity
         query = """
-            SELECT id, content, metadata, embedding_model,
-                   embedding <=> %s AS similarity_distance 
+            SELECT 
+                id, 
+                content, 
+                embedding_model, 
+                metadata, 
+                created_at,
+                updated_at,
+                embedding <=> $1 AS similarity_distance
             FROM documents 
-            WHERE embedding_model = %s
-            ORDER BY embedding <=> %s
-            LIMIT %s
+            WHERE embedding_model = $2
+            ORDER BY embedding <=> $1
+            LIMIT $3
         """
+
+        async def _search():
+            async with self.pool.acquire() as conn:
+                # Convert embedding to pgvector format
+                embedding_str = f"[{','.join(map(str, query_embedding))}]"
+
+                # Execute similarity search
+                rows = await conn.fetch(
+                    query,
+                    embedding_str,    # $1 - query embedding
+                    embedding_model,  # $2 - model filter
+                    limit            # $3 - result limit
+                )
+
+                # Convert rows to list of dictionaries
+                results = []
+                for row in rows:
+                    result = {
+                        "id": row["id"],
+                        "content": row["content"],
+                        "embedding_model": row["embedding_model"],
+                        "metadata": row["metadata"],
+                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+                        "similarity_score": 1.0 - float(row["similarity_distance"])  # Convert distance to similarity
+                    }
+                    results.append(result)
+
+                return results
+
+        try:
+            results = await self._execute_with_retry(_search, operation_name=f"search_similar_{embedding_model}")
+
+            self.logger.debug(
+                f"Found {len(results)} similar documents for model {embedding_model} (limit: {limit})"
+            )
+
+            return results if results else []
+
+        except ValueError as e:
+            # Re-raise validation errors immediately
+            self.logger.error(f"Validation error in similarity search: {e}")
+            raise
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute similarity search: {e}")
+            return []
 
 
 

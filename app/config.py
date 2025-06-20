@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file_path :str = "logs/RAG-app.log"
 
-
     # Database
     database_url: str = "postgresql://user:pass@localhost/db"
     
@@ -65,8 +64,8 @@ def setup_logging():   # To be configured!
     logging.getLogger("asyncpg").setLevel(logging.WARNING)
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     # Application loggers
-    logging.getLogger("core.database").setLevel(logging.DEBUG)  
-    logging.getLogger("core.llama_client").setLevel(logging.INFO)
+    logging.getLogger("Database.Postgres").setLevel(logging.DEBUG)  
+    logging.getLogger("LLMClient.LLama").setLevel(logging.INFO)
 
     #Add filter to add information about pods and nodes
     #logging.getLogger().addFilter(pod_filter)

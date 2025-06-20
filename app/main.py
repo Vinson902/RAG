@@ -54,7 +54,13 @@ class RAGApplication:
             db:dep.DatabaseDep,
             llama:dep.LlamaDep,
             embedding:dep.EmbeddingDep):
-            return{"db": db.__class__.__name__,"llama":llama.__class__.__name__,"embedding":embedding.__class__.__name__} 
+            return{"db": db.__class__.__name__,"llama":llama.__class__.__name__,"embedding":embedding.__class__.__name__}
+
+        @self.app.get("/llama-client")
+        async def llama_client(
+
+        ):
+            return
 
     def setup_cors(self):
         origins = settings.cors_origins.split(",") if settings.cors_origins == "" else ["*"]

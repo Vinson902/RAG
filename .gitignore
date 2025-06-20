@@ -4,3 +4,4 @@ app/__pycache__/dependencies.cpython-313.pyc
 app/__pycache__/main.cpython-313.pyc
 app/logs/RAG-app.log
 app/core/__pycache__/database.cpython-313.pyc
+app/core/__pycache__/llama_client.cpython-313.pyc

@@ -2,33 +2,30 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Callable, Optional,List, Dict, Any, Tuple
-import asyncpg
+import asyncpg  
 from asyncpg import Pool, Connection
 from config import settings
 
-logger = logging.getLogger(__name__)
 
 class DatabaseManagerBase(ABC):
     """Abstract class for database operations"""
 
     def __init__(self):
-        self.logger = logging.getLogger("core.database")
+        self.logger = logging.getLogger("Database")
         self._connected = False
 
     @property
     def is_connected(self) -> bool:
         return self._connected
         
-    def _set_connected(self, connected: bool, url: str = None):
+    def _set_connected(self, connected: bool):
         """Update connection state with logging"""
         self._connected = connected
-        if url:
-            self._connection_url = url
         status = "connected" if connected else "disconnected"
         self.logger.info(f"Database {status}")
         
     async def _execute_with_retry(self, operation: Callable, operation_name :str = "", max_retries: int = 3):
-        """Common retry logic for database operations"""
+        """Retry logic for database operations that commonly raise exceptions"""
         for attempt in range(max_retries):
             try:
                 result = await operation()
@@ -36,15 +33,15 @@ class DatabaseManagerBase(ABC):
                 return result
             except Exception as e:
 
-                self.logger.debug(f"{operation_name} - Attempt {attempt + 1} caught exception: {type(e).__name__}: {e}")
+                self.logger.info(f"{operation_name} - Attempt {attempt + 1} caught exception: {type(e).__name__}: {e}")
 
                 if attempt == max_retries - 1:
                     self.logger.error(f"Operation: {operation_name} - failed after {attempt+1} attempts  error: {e}")
-                    #raise
-                
-                self.logger.warning(f"{operation_name} - Attempt {attempt + 1} failed, retrying: {e}")
-                self.logger.debug(f"{operation_name} - Sleeping for {0.1 * (2 ** attempt)} seconds")
-                await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+                else:
+                    self.logger.warning(f"{operation_name} - Attempt {attempt + 1} failed, retrying: {e}")
+                    self.logger.debug(f"{operation_name} - Sleeping for {0.1 * (2 ** attempt)} seconds")
+                    await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+        return None
 
 
     @abstractmethod
@@ -72,6 +69,7 @@ class DatabaseManager(DatabaseManagerBase):
     """
     def __init__(self, database_url: str, min_connections: int = 2, max_connections: int = 5):
         super().__init__()
+        self.logger = logging.getLogger("Database.Postgres")
         self.database_url = database_url
         self.min_connections = min_connections
         self.max_connections = max_connections
@@ -94,15 +92,17 @@ class DatabaseManager(DatabaseManagerBase):
                 max_size=self.max_connections,
                 command_timeout=60
             )
-            # Use base class method to update state
-            self._set_connected(True, self.database_url)
-            
             # Initialize schema on connection
             await self.init_schema()
+            
+            # Update state
+            self._set_connected(True)
             return True
         
-        result = await self._execute_with_retry(_connect, operation_name="database_connection")
-        logging.info("database is connected")
+        # If not successful kubernetes should restart the pod
+        result = await self._execute_with_retry(_connect, operation_name="database_connection") 
+        if result:
+            self.logger.info(f"database is connected")        
         return result
 
 
@@ -115,7 +115,7 @@ class DatabaseManager(DatabaseManagerBase):
 
     async def health_check(self) -> bool:
         """Check if database is accessible"""
-        logger.debug("health_check")
+        self.logger.debug("health_check")
         if not self.pool:
             return False
         async def _health_check():
@@ -138,9 +138,9 @@ class DatabaseManager(DatabaseManagerBase):
         
         async with self.pool.acquire() as conn:
             try:
-                # Enable pgvector extension
+                # Enable pgvector extension 
                 await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                logger.info("pgvector extension enabled")
+                self.logger.info("pgvector extension enabled")
                 
                 # Create embedding table
                 await conn.execute("""
@@ -155,7 +155,7 @@ class DatabaseManager(DatabaseManagerBase):
                     )
                 """)
                 
-                logger.info("Documents table created/verified")
+                self.logger.info("Documents table created/verified")
 
                 # Add index for model-based queries
                 await conn.execute("""
@@ -176,10 +176,10 @@ class DatabaseManager(DatabaseManagerBase):
                     ON documents USING gin(to_tsvector('english', content))
                 """)
                 
-                logger.info("Database schema initialization completed")
+                self.logger.info("Database schema initialization completed")
                 
             except Exception as e:
-                logger.error(f"Schema initialization failed: {e}")
+                self.logger.error(f"Schema initialization failed: {e}")
                 raise
     
         # Document CRUD operations (to be implemented)
@@ -385,7 +385,9 @@ async def get_database_manager() -> DatabaseManager:
     global _db_manager
     if _db_manager is None:
         _db_manager = DatabaseManager(settings.database_url)
-        logging.debug("Created DatabaseManager instance (not connected)")
+        if _db_manager.connect():
+            return _db_manager
+        return None
     return _db_manager
 
 

@@ -16,7 +16,7 @@ async def get_llama_client():
     try:
         yield client
     finally:
-        client.close()
+        await client.close()
 
 async def get_embedding_service():
     """Embedding service dependency"""

@@ -136,7 +136,7 @@ class DatabaseManager(DatabaseManagerBase):
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
         
-        async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn: # Borrow a connection 
             try:
                 # Enable pgvector extension 
                 await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -180,7 +180,8 @@ class DatabaseManager(DatabaseManagerBase):
                 
             except Exception as e:
                 self.logger.error(f"Schema initialization failed: {e}")
-                raise
+                raise   # Re-raise will make the app handler the exception somewhere else
+                        # Or will make kubernetes restart the pod
     
         # Document CRUD operations (to be implemented)
     async def insert_document(self, doc_id: str, content: str, embedding: List[float], 

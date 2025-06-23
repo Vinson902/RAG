@@ -1,189 +1,154 @@
+import httpx
 import asyncio
 import logging
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Optional, List, ClassVar
 from dataclasses import dataclass
-import aiohttp
-import json
-from config import settings 
+from config import settings
 
 @dataclass
 class LlamaResponse:
-    """Response from llama.cpp server"""
     content: str
     tokens_generated: int
     tokens_per_second: float
     completion_time: float
     model: str
+    error: Optional[str] = None
 
-class LLMClientBase(ABC):
-    """Abstract base class for different LLM clients"""
-    
-    def __init__(self):
-        self.logger = logging.getLogger("LLMClient")
-
-    @abstractmethod
-    async def generate(self, prompt: str, **kwargs) -> LlamaResponse:
-        """Generate text from prompt"""
-        pass
-    
-    @abstractmethod
-    async def health_check(self) -> bool:
-        """Check if LLM server is healthy"""
-        pass
-
-class LlamaClient(LLMClientBase):
+class LlamaClient:
     """
-    HTTP client for llama.cpp server
-    Optimized for Phi-3.5-mini Q3_K_M on 4GB RAM Pi
+    LlamaClient with internal HTTP client management
     """
     
-    def __init__(
-        self,
-        base_url: str = f"{settings.llama_host}:{settings.llama_port}",
-        timeout: int = 180,  # 3 minutes for generation
-        max_connections: int = 2,  # Limited for Pi resources
-        max_tokens: int = 200,  # 4GB RAM limit
-    ):
-        super().__init__()
-        self.logger = logging.getLogger("LLMClient.LLama")
-        self.base_url = base_url.rstrip('/')
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
-        self.max_tokens = max_tokens
+    # Class-level shared client for all instances
+    _shared_client: ClassVar[Optional[httpx.AsyncClient]] = None
+    _client_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    
+    def __init__(self, base_url: str = None):
+        self.base_url = (base_url or f"{settings.llama_host}:{settings.llama_port}").rstrip('/')
+        self.logger = logging.getLogger("LlamaClient")
+    
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create shared HTTP client"""
+        if self._shared_client is None or self._shared_client.is_closed:
+            async with self._client_lock:
+                # Double-check pattern
+                if self._shared_client is None or self._shared_client.is_closed:
+                    self._shared_client = httpx.AsyncClient(
+                        timeout=httpx.Timeout(
+                            connect=10.0,
+                            read=180.0,
+                            write=30.0,
+                            pool=5.0
+                        ),
+                        limits=httpx.Limits(
+                            max_keepalive_connections=5,
+                            max_connections=5,
+                            keepalive_expiry=30
+                        ),
+                        headers={
+                            'Content-Type': 'application/json',
+                            'User-Agent': 'pi-cluster-rag/1.0'
+                        },
+                        follow_redirects=False,
+                        verify=False
+                    )
+                    self.logger.info("Created shared httpx client")
         
-        # Connection pool settings for Pi cluster
-        connector = aiohttp.TCPConnector(
-            limit=max_connections,
-            limit_per_host=max_connections,
-            keepalive_timeout=30,
-            enable_cleanup_closed=True
-        )
-        
-        self.session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=self.timeout,
-            headers={'Content-Type': 'application/json'}
-        )
-        
-        self.logger.info(f"LlamaClient initialized for {base_url}")
-
-    def _format_phi35_prompt(self, prompt: str, system_message: str = None) -> str:
-        """
-        Format prompt for Phi-3.5-mini using proper chat template
-        Template: <|system|>\n{system}<|end|>\n<|user|>\n{user}<|end|>\n<|assistant|>\n
-        """
+        return self._shared_client
+    
+    def _format_prompt(self, prompt: str, system_message: str = None) -> str:
+        """Format prompt for Phi-3.5-mini"""
         if system_message is None:
-            system_message = "You are a helpful AI assistant that provides accurate and concise answers."
+            system_message = "You are a helpful AI assistant that provides accurate answers."
         
-        formatted = f"<|system|>\n{system_message}<|end|>\n<|user|>\n{prompt}<|end|>\n<|assistant|>\n"
-        return formatted
+        return f"<|system|>\n{system_message}<|end|>\n<|user|>\n{prompt}<|end|>\n<|assistant|>\n"
     
-
+    async def _retry_operation(self, operation, max_retries: int = 2):
+        """Retry logic"""
+        for attempt in range(max_retries):
+            try:
+                return await operation()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                self.logger.warning(f"Attempt {attempt + 1} failed, retrying: {e}")
+                await asyncio.sleep(0.1 * (2 ** attempt))
+    
     async def generate(
         self,
         prompt: str,
         system_message: str = None,
-        max_tokens: int = None,
+        max_tokens: int = 200,
         temperature: float = 0.2,
         top_p: float = 0.7,
         stop_sequences: List[str] = None
     ) -> LlamaResponse:
-        """
-        Generate text using llama.cpp server
+        """Generate text using llama.cpp server"""
         
-        Args:
-            prompt: User prompt/question
-            system_message: System instructions (optional)
-            max_tokens: Max tokens to generate (defaults to instance setting)
-            temperature: Randomness (0.0-2.0)
-            top_p: Nucleus sampling (0.0-1.0)
-            stop_sequences: Stop generation on these strings
-        
-        Returns:
-            LlamaResponse with generated text and metadata
-        """
-        if not self.session or self.session.closed:
-            raise RuntimeError("LlamaClient session is closed")
-        
-        # Format prompt for Phi-3.5-mini
-        formatted_prompt = self._format_phi35_prompt(prompt, system_message)
-        
-        # Prepare request payload
-        payload = {
-            "prompt": formatted_prompt,
-            "n_predict": max_tokens or self.max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "stream": False,  # Non-streaming answer
-            "stop": stop_sequences or ["<|end|>", "<|user|>"],
-        }
+        async def _generate():
+            client = await self._get_client()
+            
+            formatted_prompt = self._format_prompt(prompt, system_message)
+            
+            payload = {
+                "prompt": formatted_prompt,
+                "n_predict": max_tokens,
+                "temperature": max(0.0, min(2.0, temperature)),
+                "top_p": max(0.0, min(1.0, top_p)),
+                "stream": False,
+                "stop": stop_sequences or ["<|end|>", "<|user|>", "<|system|>"],
+                "n_keep": -1,
+                "repeat_penalty": 1.1,
+                "mirostat": 0,
+            }
+            
+            response = await client.post(f"{self.base_url}/completion", json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            # Clean response
+            content = result.get("content", "").strip()
+            for token in ["<|end|>", "<|user|>", "<|assistant|>", "<|system|>"]:
+                content = content.replace(token, "").strip()
+            
+            timings = result.get("timings", {})
+            
+            return LlamaResponse(
+                content=content,
+                tokens_generated=result.get("tokens_predicted", 0),
+                tokens_per_second=timings.get("predicted_per_second", 0.0),
+                completion_time=timings.get("predicted_ms", 0.0) / 1000.0,
+                model="phi-3.5-mini"
+            )
         
         try:
-            self.logger.info(f"Sending generation request to {self.base_url}/completion")
-            
-            async with self.session.post(
-                f"{self.base_url}/completion",
-                json=payload
-        ) as response:
-                
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise aiohttp.ClientResponseError(
-                        request_info=response.request_info,
-                        history=response.history,
-                        status=response.status,
-                        message=f"LLM server error: {error_text}"
-                    )
-                
-                result = await response.json()
-                
-                # Parse llama.cpp response
-                return LlamaResponse(
-                    content=result.get("content", "").strip(),
-                    tokens_generated=result.get("tokens_predicted", 0),
-                    tokens_per_second=result.get("timings", {}).get("predicted_per_second", 0.0),
-                    completion_time=result.get("timings", {}).get("predicted_ms", 0.0) / 1000.0,
-                    model="phi-3.5-mini"
-                )
-                
-        except aiohttp.ClientError as e:
-            self.logger.error(f"HTTP client error: {e}")
-            raise
-        except asyncio.TimeoutError:
-            self.logger.error("Request timeout - llama.cpp server too slow")
-            raise
+            return await self._retry_operation(_generate)
         except Exception as e:
-            self.logger.error(f"Unexpected error in generate(): {e}")
-            raise
+            self.logger.error(f"Generation failed: {e}")
+            return LlamaResponse(
+                content="",
+                tokens_generated=0,
+                tokens_per_second=0.0,
+                completion_time=0.0,
+                model="phi-3.5-mini",
+                error=str(e)
+            )
     
     async def health_check(self) -> bool:
-        """
-        Check if llama.cpp server is responding
-        
-        Returns:
-            True if server is healthy, False otherwise
-        """
+        """Check if llama.cpp server is healthy"""
         try:
-            async with self.session.get(f"{self.base_url}/health") as response:
-                return response.status == 200
+            client = await self._get_client()
+            response = await client.get(f"{self.base_url}/health", timeout=5.0)
+            return response.status_code == 200
         except Exception as e:
             self.logger.warning(f"Health check failed: {e}")
             return False
-    async def close(self):
-        
     
-# Factory function 
-def create_llama_client(base_url: str = None) -> LlamaClient:
-    """
-    Factory function to create LlamaClient with environment-based config
-    
-    Args:
-        base_url: Override default URL
-    
-    Returns:
-        Configured LlamaClient instance
-    """
-    if base_url is None:
-        base_url = f"{settings.llama_host}:{settings.llama_port}"
-    
-    return LlamaClient(base_url=base_url)
+    @classmethod
+    async def close_shared_client(cls):
+        """Close the shared HTTP client (call during app shutdown)"""
+        if cls._shared_client and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
+            logging.getLogger("LlamaClient").info("Closed shared httpx client")

@@ -78,3 +78,13 @@ class RAGApplication:
 setup_logging()
 rag_app = RAGApplication()
 app = rag_app.app  # This is what uvicorn needs
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+        reload=False  # Don't use reload in production
+    )

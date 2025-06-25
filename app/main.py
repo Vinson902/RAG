@@ -2,7 +2,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from typing import List
-from core.llama_client import LlamaClient
+from clients.llama_client import LlamaClient
 from core.database import DatabaseClient
 
 @asynccontextmanager

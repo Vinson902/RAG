@@ -5,3 +5,14 @@ app/__pycache__/main.cpython-313.pyc
 app/logs/RAG-app.log
 app/core/__pycache__/database.cpython-313.pyc
 app/core/__pycache__/llama_client.cpython-313.pyc
+app/.vscode/settings.json
+RAG.code-workspace
+app/services/embedding/.vscode/settings.json
+scripts/setup.sh
+app/clients/__pycache__/llama_client.cpython-313.pyc
+app/services/embedding/requirements.txt
+app/services/embedding/__pycache__/config.cpython-313.pyc
+app/services/embedding/__pycache__/main.cpython-313.pyc
+app/services/embedding/__pycache__/models.cpython-313.pyc
+app/services/embedding/core/__pycache__/embedding_service.cpython-313.pyc
+tests/test_embedding_service.py

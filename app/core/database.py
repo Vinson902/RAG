@@ -2,7 +2,7 @@ import asyncpg
 import asyncio
 import logging
 import json
-from typing import List, Dict, Any, Optional, ClassVar
+from typing import Callable, List, Dict, Any, Optional, ClassVar
 from dataclasses import dataclass
 from config import settings
 
@@ -26,122 +26,172 @@ class DatabaseClient:
     # Class-level shared connection pool
     _pool: ClassVar[Optional[asyncpg.Pool]] = None
     _pool_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    _logger: ClassVar[logging.Logger] = logging.getLogger("DatabaseClient")
 
     def __init__(self):
-        self.logger = logging.getLogger("DatabaseClient")
+        self.logger = self._logger
 
-    async def _get_pool(self) -> asyncpg.Pool:
-        """Get or create shared connection pool"""
-        if self._pool is None or self._pool._closed:
-            async with self._pool_lock:
-                # Double-check pattern
-                if self._pool is None or self._pool._closed:
-                    dbc = settings.database_url
-                    # Database connection string
-                    dbc
-                    self._pool = await asyncpg.create_pool(
-                        dbc,
-                        min_size=2,  # Minimum connections
-                        max_size=10,  # Maximum connections
-                        max_queries=50000,  # Max queries per connection
+    @classmethod
+    async def _init_pool(cls) -> asyncpg.Pool:
+        """
+        Initialize the shared connection pool
+        This is called automatically when needed
+        """
+        if cls._pool is None or cls._pool._closed:
+            async with cls._pool_lock:
+                # Double-check pattern: check again inside lock
+                if cls._pool is None or cls._pool._closed:
+                    
+                    # Get database connection string from settings
+                    db_url = settings.database_url
+                    
+                    cls._logger.info(f"Creating database connection pool to {db_url}")
+                    
+                    cls._pool = await asyncpg.create_pool(
+                        db_url,
+                        min_size=2,          # Minimum connections in pool
+                        max_size=10,         # Maximum connections in pool  
+                        max_queries=50000,   # Max queries per connection before rotation
                         max_inactive_connection_lifetime=300,  # 5 minutes
-                        command_timeout=60,  # Command timeout
+                        command_timeout=60,  # Individual command timeout
                         server_settings={
-                            "jit": "off",  # Disable JIT for Pi performance
-                            "application_name": "pi-cluster-rag",
-                        },
+                            'jit': 'off',  # Disable JIT compilation for Pi performance
+                            'application_name': 'pi-cluster-rag'
+                        }
                     )
-
+                    
                     # Initialize database schema
-                    await self._initialize_schema()
+                    await cls._init_schema()
+                    
+                    cls._logger.info("Database connection pool created successfully")
+        
+        return cls._pool
 
-                    self.logger.info("Created database connection pool")
-
-        return self._pool
-
-    async def _initialize_schema(self):
-        """Initialize database schema and pgvector extension"""
-        async with self._pool.acquire() as conn:
+    @classmethod
+    async def _init_schema(cls):
+        """Initialize database schema and extensions"""
+        async with cls._pool.acquire() as conn:
             # Enable pgvector extension
             await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-
-            # Create documents table
+            
+            # Create documents table if it doesn't exist
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id SERIAL PRIMARY KEY,
                     content TEXT NOT NULL,
-                    embedding VECTOR(384),  
+                    embedding VECTOR(384),  -- Adjust size based on your embedding model
                     metadata JSONB DEFAULT '{}',
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW()
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
             """)
-
-            # Create index for vector similarity search
+            
+            # Create vector similarity index
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS documents_embedding_idx 
+                CREATE INDEX IF NOT EXISTS documents_embedding_cosine_idx 
                 ON documents USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100);
             """)
-
+            
             # Create text search index
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS documents_content_idx 
+                CREATE INDEX IF NOT EXISTS documents_content_search_idx 
                 ON documents USING GIN (to_tsvector('english', content));
             """)
+            
+            # Create metadata index for filtering
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS documents_metadata_idx 
+                ON documents USING GIN (metadata);
+            """)
+            
+            cls._logger.info("Database schema initialized")
 
-            self.logger.info("Database schema initialized")
+    async def _execute_with_retry(self, operation: Callable, operation_name :str = "", max_retries: int = 3):
+        """Retry logic for database operations that commonly raise exceptions"""
+        for attempt in range(max_retries):
+            try:
+                result = await operation()
+                self.logger.debug(f"{operation_name} - Succeeded on attempt {attempt + 1}")
+                return result
+            except Exception as e:
 
+                self.logger.info(f"{operation_name} - Attempt {attempt + 1} caught exception: {type(e).__name__}: {e}")
+
+                if attempt == max_retries - 1:
+                    self.logger.error(f"Operation: {operation_name} - failed after {attempt+1} attempts  error: {e}")
+                else:
+                    self.logger.warning(f"{operation_name} - Attempt {attempt + 1} failed, retrying: {e}")
+                    self.logger.debug(f"{operation_name} - Sleeping for {0.1 * (2 ** attempt)} seconds")
+                    await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+        return None
+    
+    async def _get_pool(self) -> asyncpg.Pool:
+        """
+        Get the shared connection pool
+        Initializes pool if it doesn't exist
+        """
+        if self._pool is None or self._pool._closed:
+            await self._init_pool()
+            
+        return self._pool
+    
     async def insert_document(
         self, content: str, embedding: List[float], metadata: Optional[Dict[str, Any]] = None
     ) -> int:
         """Insert a document with its embedding"""
-        pool = await self._get_pool()
 
-        async with pool.acquire() as conn:
-            # Convert embedding to string format for pgvector
-            embedding_str = f"[{','.join(map(str, embedding))}]"
+        async def _insert():
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Convert embedding to string format for pgvector
+                embedding_str = f"[{','.join(map(str, embedding))}]"
 
-            result = await conn.fetchrow(
-                """
-                INSERT INTO documents (content, embedding, metadata)
-                VALUES ($1, $2, $3)
-                RETURNING id;
-                """,
-                content,
-                embedding_str,
-                json.dumps(metadata or {}),
-            )
+                return await conn.fetchrow(
+                    """
+                    INSERT INTO documents (content, embedding, metadata)
+                    VALUES ($1, $2, $3)
+                    RETURNING id;
+                    """,
+                    content,
+                    embedding_str,
+                    json.dumps(metadata or {}),
+                )
+            
 
+            result = self._execute_with_retry(_insert, "Insert document")
             doc_id = result["id"]
             self.logger.debug(f"Inserted document {doc_id}")
             return doc_id
 
     async def insert_documents_batch(self, documents: List[Dict]) -> List[int]:
         """Insert multiple documents efficiently"""
-        pool = await self._get_pool()
 
-        async with pool.acquire() as conn:
-            # Prepare data for batch insert
-            data = []
-            for doc in documents:
-                embedding_str = f"[{','.join(map(str, doc['embedding']))}]"
-                data.append(
-                    (doc["content"], embedding_str, json.dumps(doc.get("metadata", {})))
+        async def _insert_batch():
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Prepare data for batch insert
+                data = []
+                for doc in documents:
+                    embedding_str = f"[{','.join(map(str, doc['embedding']))}]"
+                    data.append(
+                        (doc["content"], embedding_str, json.dumps(doc.get("metadata", {})))
+                    )
+
+                # Batch insert
+                result = await conn.fetch(
+                    """
+                    INSERT INTO documents (content, embedding, metadata)
+                    SELECT * FROM UNNEST($1::text[], $2::vector[], $3::jsonb[])
+                    RETURNING id;
+                    """,
+                    [d[0] for d in data],  # content
+                    [d[1] for d in data],  # embeddings
+                    [d[2] for d in data],  # metadata
                 )
 
-            # Batch insert
-            result = await conn.fetch(
-                """
-                INSERT INTO documents (content, embedding, metadata)
-                SELECT * FROM UNNEST($1::text[], $2::vector[], $3::jsonb[])
-                RETURNING id;
-                """,
-                [d[0] for d in data],  # content
-                [d[1] for d in data],  # embeddings
-                [d[2] for d in data],  # metadata
-            )
 
+            result = self._execute_with_retry(_insert_batch,"insert batch")
             doc_ids = [row["id"] for row in result]
             self.logger.info(f"Inserted {len(doc_ids)} documents")
             return doc_ids
@@ -153,29 +203,32 @@ class DatabaseClient:
         similarity_threshold: float = 0.7,
     ) -> List[Document]:
         """Search for similar documents using vector similarity"""
-        pool = await self._get_pool()
 
-        async with pool.acquire() as conn:
-            embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        async def _search():
+            pool = await self._get_pool()
 
-            result = await conn.fetch(
-                """
-                SELECT 
-                    id, 
-                    content, 
-                    embedding,
-                    metadata,
-                    1 - (embedding <=> $1::vector) AS similarity
-                FROM documents
-                WHERE 1 - (embedding <=> $1::vector) > $2
-                ORDER BY embedding <=> $1::vector
-                LIMIT $3;
-                """,
-                embedding_str,
-                similarity_threshold,
-                limit,
-            )
+            async with pool.acquire() as conn:
+                embedding_str = f"[{','.join(map(str, query_embedding))}]"
 
+                result = await conn.fetch(
+                    """
+                    SELECT 
+                        id, 
+                        content, 
+                        embedding,
+                        metadata,
+                        1 - (embedding <=> $1::vector) AS similarity
+                    FROM documents
+                    WHERE 1 - (embedding <=> $1::vector) > $2
+                    ORDER BY embedding <=> $1::vector
+                    LIMIT $3;
+                    """,
+                    embedding_str,
+                    similarity_threshold,
+                    limit,
+                )
+            
+            resutl = self._execute_with_retry(_search, "Search")
             documents = []
             for row in result:
                 # Parse embedding back to list
@@ -270,57 +323,6 @@ class DatabaseClient:
 
             return deleted
 
-    async def update_document(
-        self,
-        doc_id: int,
-        content: str = "",
-        embedding: Optional[List[float]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        """Update a document"""
-        pool = await self._get_pool()
-
-        async with pool.acquire() as conn:
-            # Build dynamic update query
-            updates = []
-            values = []
-            param_count = 1
-
-            if content is not None:
-                updates.append(f"content = ${param_count}")
-                values.append(content)
-                param_count += 1
-
-            if embedding is not None:
-                embedding_str = f"[{','.join(map(str, embedding))}]"
-                updates.append(f"embedding = ${param_count}")
-                values.append(embedding_str)
-                param_count += 1
-
-            if metadata is not None:
-                updates.append(f"metadata = ${param_count}")
-                values.append(json.dumps(metadata))
-                param_count += 1
-
-            if not updates:
-                return False
-
-            updates.append("updated_at = NOW()")
-            values.append(doc_id)  # For WHERE clause
-
-            query = f"""
-                UPDATE documents 
-                SET {", ".join(updates)}
-                WHERE id = ${param_count};
-            """
-
-            result = await conn.execute(query, *values)
-            updated = result.split()[-1] == "1"
-
-            if updated:
-                self.logger.debug(f"Updated document {doc_id}")
-
-            return updated
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get database statistics"""

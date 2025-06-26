@@ -1,3 +1,4 @@
+from core.models import EmbedItem
 from sentence_transformers import SentenceTransformer
 from typing import List
 import logging
@@ -7,7 +8,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         self.model_name = model_name
-        
+
         """Load the sentence transformer model at startup"""
         logger.info(f"Loading embedding model: {self.model_name}")
         try:
@@ -23,7 +24,7 @@ class EmbeddingService:
             logger.error(f"Failed to load model: {e}")
             raise RuntimeError(f"Could not load embedding model: {e}")
     
-    def encode_text(self, text: str) -> List[float]:
+    def encode_text(self, text: str) -> EmbedItem:
         """Convert single text to embedding"""
         try:
             # Clean the text
@@ -33,24 +34,24 @@ class EmbeddingService:
             
             # Generate embedding
             embedding = self.model.encode(text)
-            return embedding.tolist()
+            return EmbedItem(
+                text = text,
+                embedding=embedding.tolist(),
+                dimensions=self.dimensions,
+                text_length=len(text),
+                model= self.model_name
+            )
             
         except Exception as e:
             logger.error(f"Failed to encode text: {e}")
             raise
     
-    def encode_batch(self, texts: List[str]) -> List[List[float]]:
+    def encode_batch(self, texts: List[str]) -> List[EmbedItem]:
         """Convert multiple texts to embeddings"""
         try:
-            # Clean texts
-            cleaned_texts = [text.strip() for text in texts if text.strip()]
-            
-            if not cleaned_texts:
-                raise ValueError("No valid texts provided")
-            
             # Generate embeddings in batch
-            embeddings = self.model.encode(cleaned_texts)
-            return [embedding.tolist() for embedding in embeddings]
+            embeddings = [self.encode_text(text) for text in texts] # Vector is not normaliased
+            return embeddings
             
         except Exception as e:
             logger.error(f"Failed to encode batch: {e}")

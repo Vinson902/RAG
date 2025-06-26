@@ -1,12 +1,20 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from config import settings
 
+
+ # Requests 
+ # model and normalise for future flexibility 
+ 
 class EmbedRequest(BaseModel):
     text: str = Field(
         description="Text to embed",
         min_length=1,
         max_length=10000
     )
+    model : str | None = settings.model_name
+    normalise: bool | None = False
+
 
 class EmbedBatchRequest(BaseModel):
     texts: List[str] = Field(
@@ -14,16 +22,17 @@ class EmbedBatchRequest(BaseModel):
         min_length=1,
         max_length=100
     )
+    model : str | None = settings.model_name
+    normalise: bool | None = False
 
-class EmbedResponse(BaseModel):
+ # Responses
+
+class EmbedItem(BaseModel):
+    text: str = Field(description="Original text")
     embedding: List[float] = Field(description="Text embedding vector")
     dimensions: int = Field(description="Number of dimensions")
     text_length: int = Field(description="Original text length")
-
-class EmbedBatchResponse(BaseModel):
-    embeddings: List[List[float]] = Field(description="List of embedding vectors")
-    dimensions: int = Field(description="Number of dimensions")
-    count: int = Field(description="Number of embeddings returned")
+    model: str = Field(description="Model used for embeddings")
 
 class HealthResponse(BaseModel):
     status: str = Field(description="Health status")
@@ -37,7 +46,7 @@ class ErrorResponse(BaseModel):
     error: str = Field(description="Error message")
     detail: Optional[str] = Field(default=None, description="Error details")
 
-class ModelInfo(BaseModel):
+class ModelInfoResponse(BaseModel):
     model_name: str = Field(description="Model name")
     is_loaded: bool = Field(description="Whether model is loaded")
     dimensions: Optional[int] = Field(default=None, description="Model dimensions")

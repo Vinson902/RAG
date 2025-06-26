@@ -24,7 +24,6 @@ RUN pip install --no-cache-dir \
 WORKDIR /app
 COPY services/embedding/main.py .
 COPY services/embedding/config.py .
-COPY services/embedding/models.py .
 COPY services/embedding/core/ ./core/
 
 # Expose port

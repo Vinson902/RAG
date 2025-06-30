@@ -4,7 +4,6 @@ from config import settings
 
 
  # Requests 
- # model and normalise for future flexibility 
  
 class EmbedRequest(BaseModel):
     text: str = Field(
@@ -22,8 +21,6 @@ class EmbedBatchRequest(BaseModel):
         min_length=1,
         max_length=100
     )
-    model : str | None = settings.model_name
-    normalise: bool | None = False
 
  # Responses
 

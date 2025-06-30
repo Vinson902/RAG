@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://user:pass@localhost/db"
 
     # AI Model
+    model: str = "Phi-3.5-mini"
     llama_host: str = "localhost"
     llama_port: int = 8080
 

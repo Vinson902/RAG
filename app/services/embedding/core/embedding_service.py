@@ -62,7 +62,7 @@ class EmbeddingService:
         """Check if model is loaded"""
         return self.model is not None
     
-    def get_model_info(self) -> dict:
+    async def health(self) -> dict:
         """Get model information"""
         return {
             "model_name": self.model_name,

@@ -10,11 +10,11 @@ from config import settings
 from core.embedding_service import EmbeddingService
 
 from core.models import (
+    EmbedItem,  
     EmbedRequest,
     EmbedBatchRequest,
-    EmbedItem,
     HealthResponse
-)
+) 
 
 # Configure logging
 logging.basicConfig(level=settings.log_level)
@@ -127,7 +127,7 @@ async def health_check(service: EmbeddingService = Depends(get_embedding_service
 @app.get("/info")
 async def get_info(service: EmbeddingService = Depends(get_embedding_service)):
     """Get model information"""
-    return service.get_model_info()
+    return service.info()
 
 
 if __name__ == "__main__":

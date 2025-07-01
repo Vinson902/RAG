@@ -6,6 +6,7 @@ ENV HF_HUB_DISABLE_SYMLINKS_WARNING=1
 ENV TRANSFORMERS_OFFLINE=0
 ENV HF_DATASETS_OFFLINE=0
 
+# Handpicked libraries to minimase the image size 
 RUN pip install --no-cache-dir \
     torch==2.1.0+cpu \
     numpy==1.24.4 \

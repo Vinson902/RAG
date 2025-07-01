@@ -1,6 +1,3 @@
-import httpx
-import asyncio
-import logging
 from typing import Optional, List, ClassVar
 from dataclasses import dataclass
 from config import settings
@@ -49,6 +46,15 @@ class LlamaClient(Client):
 
         return f"<|system|>\n{system_message}<|end|>\n<|user|>\n{prompt}<|end|>\n<|assistant|>\n"
 
+    async def health_check(self) -> bool:
+        """Check if llama.cpp server is healthy"""
+        try:
+            response = await self.client.get("/health", timeout=5.0)
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.warning(f"Health check failed: {e}")
+            return False
+            
     async def generate(
         self,
         prompt: str,
@@ -108,12 +114,3 @@ class LlamaClient(Client):
                 model=settings.model,
                 error=str(e),
             )
-
-    async def health_check(self) -> bool:
-        """Check if llama.cpp server is healthy"""
-        try:
-            response = await self.client.get("/health", timeout=5.0)
-            return response.status_code == 200
-        except Exception as e:
-            self.logger.warning(f"Health check failed: {e}")
-            return False

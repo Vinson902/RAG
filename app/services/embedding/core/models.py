@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from config import settings
 
 
  # Requests 
@@ -11,8 +10,6 @@ class EmbedRequest(BaseModel):
         min_length=1,
         max_length=10000
     )
-    model : str | None = settings.model_name
-    normalise: bool | None = False
 
 
 class EmbedBatchRequest(BaseModel):

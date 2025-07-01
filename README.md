@@ -115,8 +115,8 @@ All AI-generated components required extensive testing, debugging, and integrati
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Pi-Cluster RAG System                              │
-│                        Implementation Roadmap                              │
+│                         Pi-Cluster RAG System                               │
+│                        Implementation Roadmap                               │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Phase 1: Foundation - COMPLETE
@@ -124,11 +124,11 @@ Phase 1: Foundation - COMPLETE
 │         pi-master               │───▶│         pi-worker               │
 │      (Pi 5, 8GB RAM)            │     │      (Pi 5, 4GB RAM)            │
 ├─────────────────────────────────┤     ├─────────────────────────────────┤
-│  ✓ k3s Server                  │     │  ✓ k3s Agent                    │
+│ [X] k3s Server                  │     │ [X] k3s Agent                   │
 │     • Cluster management        │     │     • Container runtime         │
 │     • Service discovery         │     │     • Pod scheduling            │
 │                                 │     │                                 │
-│                                 │     │  ✓ llama.cpp                   │
+│                                 │     │ [X] llama.cpp                   │
 │                                 │     │     • Phi-3.5-mini (3B)         │
 │                                 │     │     • Q3_K_M quantization       │
 │                                 │     │     • 4 tokens/sec inference    │
@@ -140,23 +140,23 @@ Phase 2: RAG Pipeline - IN PROGRESS
 │         pi-master               │───▶│         pi-worker               │
 │      (Pi 5, 8GB RAM)            │     │      (Pi 5, 4GB RAM)            │
 ├─────────────────────────────────┤     ├─────────────────────────────────┤
-│  → FastAPI Gateway              │     │     ✓ k3s Agent                │
+│ [>] FastAPI Gateway             │     │    [X] k3s Agent                │
 │     • RAG orchestration         │     │       • Container runtime       │
 │     • Request routing           │     │       • Pod scheduling          │
 │     • Response aggregation      │     │                                 │
-│                                 │     │    ✓ llama.cpp                 │
-│   ○ PostgreSQL + pgvector       │     │     • Inference engine          │
+│                                 │     │   [X] llama.cpp                 │
+│ [ ] PostgreSQL + pgvector       │     │     • Inference engine          │
 │     • Vector embeddings         │     │     • Model serving             │
 │     • Semantic search           │     │                                 │
 │     • Document metadata         │     │                                 │
 │                                 │     │                                 │
-│   ○ Embedding Service           │     │                                 │
+│ [ ] Embedding Service           │     │                                 │
 │     • Document processing       │     │                                 │
 │     • Vector generation         │     │                                 │
 └─────────────────────────────────┘     └─────────────────────────────────┘
   
 Legend:
-✓ Complete    → In Progress    ○ Planned
+[X] Complete    [>] In Progress  [ ] Planned
 
 
 RAG Pipeline Flow (Target):

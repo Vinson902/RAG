@@ -26,7 +26,7 @@
 
 ### Embedding Service API 
 
-A complete, production-ready microservice built with FastAPI.
+A complete, microservice built with FastAPI.
 
 #### **Key Features**
 - **Live API Endpoints**: `/embed`, `/embed/batch`, `/health`, `/info`
@@ -72,7 +72,7 @@ curl "http://pi-cluster:8001/health"
 - **Batch Optimization**: Efficient processing for multiple embedding requests
 - **Graceful Failures**: Comprehensive exception handling with detailed error responses
 
-**This microservice demonstrates the complete software development lifecycle**: from design and implementation to containerization and production deployment in a distributed system.
+**This microservice demonstrates the complete software development lifecycle**: from design and implementation to containerization and k3s deployment in a distributed system.
 
 ---
 

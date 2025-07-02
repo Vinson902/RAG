@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llama-server
+  template:
+    metadata:
+      labels:
+        app: llama-server
+    spec:
+      hostNetwork: true                    # Pod uses host network namespace
+      dnsPolicy: ClusterFirstWithHostNet   # Required when hostNetwork is true
+      nodeSelector:
+        kubernetes.io/hostname: pi-worker
+      containers:
+      - name: llama-server
+        image: docker.io/library/llama-server:curl
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        resources:
+          requests:
+            cpu: "3500m"
+            memory: "2.5Gi"
+          limits:
+            cpu: "3500m"
+            memory: "4Gi"
+        securityContext:
+          privileged: true
+          seccompProfile:
+            type: Unconfined
+          capabilities:
+            add:
+            - SYS_NICE
+            - SYS_ADMIN
+        command: ["./llama-server"]
+        args:
+        - "-m"
+        - "/models/Phi-3.5-mini-instruct-Q3_K_M.gguf"
+#        - "--no-mmap"
+#        - "--mlock"
+        - "--host"
+        - "0.0.0.0"
+        - "--port"
+        - "8080"
+        - "-t"
+        - "3"                       # Use 3 threads for inference
+        - "--verbose"
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - sh
+              - -c
+              - |
+                # Warm model after server startup without blocking container readiness
+                printf "PostStart: warming model...\n"
+                until curl -s -X POST http://0.0.0.0:8080/v1/completions \
+                  -H 'Content-Type: application/json' \
+                  -d '{"prompt":" ","max_tokens":1,"stream":false}' \
+                  > /dev/null; do
+                  printf "PostStart: server not ready, retrying in 1s...\n"
+                  sleep 1
+                done
+                printf "PostStart: model warmed successfully.\n"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            httpHeaders:
+            - name: Content-Type
+              value: application/json
+          initialDelaySeconds: 100
+          periodSeconds: 10
+      volumes:
+      - name: models
+        hostPath:
+          path: /mnt/data_remote/models/
+          type: Directory

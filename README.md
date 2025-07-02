@@ -41,7 +41,7 @@ A complete, microservice built with FastAPI.
 - **Core Service Logic**: [app/services/embedding/core/](app/services/embedding/core/)
 - **Data Models**: [app/services/embedding/core/models.py](app/services/embedding/core/models.py)
 - **Docker Configuration**: [docker/services/embedding/embedder.amd64.Dockerfile](docker/services/embedding/embedder.amd64.Dockerfile)
-  
+
 #### **API Capabilities**
 ```bash
 # Single text embedding

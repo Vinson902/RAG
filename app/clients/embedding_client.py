@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Optional, List, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from client import Client
 from config import settings
@@ -79,11 +79,17 @@ class EmbeddingClient(Client):
             raise
 
     async def embed_text(self,text: str):
-
-
-        return await self.client.post("/embed", json=EmbedRequest(
-            text= text
-        ))
+        try:
+            result = await self.client.post("/embed", json=EmbedRequest(
+                text= text
+            ))
+        except ValidationError as e:
+            self.logger.warning(f"Response schema mismatch: {e.errors()}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to embed text. Erorr - {e}")
+            raise
+        return result
     def embed_batch(self, texts: List[str]):
         return
 

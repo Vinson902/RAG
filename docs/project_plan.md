@@ -1,6 +1,6 @@
 # Pi-Cluster RAG Chatbot - Project Plan
 
-## 🎯 Project Overview
+## Project Overview
 
 **Build a distributed RAG (Retrieval-Augmented Generation) chatbot system running on a Raspberry Pi cluster that demonstrates edge AI capabilities on consumer hardware.**
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ### Hardware Configuration
 ```
@@ -63,7 +63,7 @@ Pod 3: Document & LLM Client (pi-worker)
 
 ---
 
-## 📋 Development Phases
+## Development Phases
 
 ### Phase 1: System Preparation
 **Objective:** Set up Raspberry Pi cluster with k3s orchestration
@@ -234,7 +234,7 @@ Pod 3: Document & LLM Client (pi-worker)
 
 ---
 
-## 🎯 Learning Outcomes
+## Learning Outcomes
 
 ### Technical Competencies Gained:
 1. **Distributed Systems** - Microservices communication and coordination

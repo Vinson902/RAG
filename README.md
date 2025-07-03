@@ -19,7 +19,7 @@
 This project demonstrates systematic software engineering through structured planning and execution:
 
 **Planning & Architecture:**
-- [Complete Project Plan](docs/PROJECT_PLAN.md) - 6-phase development architecture with detailed technical specifications
+- [Complete Project Plan](docs/project_plan.md) - 6-phase development architecture with detailed technical specifications
 
 ### Key Achievements
 - **20x performance improvement** through quantization research and optimization

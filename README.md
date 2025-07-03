@@ -14,6 +14,13 @@
 - **Explore performance optimization** in resource-constrained environments
 - **Practice DevOps workflows** with containerization, deployment, and monitoring
 
+## Project Documentation
+
+This project demonstrates systematic software engineering through structured planning and execution:
+
+**Planning & Architecture:**
+- [Complete Project Plan](docs/PROJECT_PLAN.md) - 6-phase development architecture with detailed technical specifications
+
 ### Key Achievements
 - **20x performance improvement** through quantization research and optimization
 - **Custom ARM compilation** solving real-world compatibility challenges  
@@ -126,7 +133,7 @@ Phase 1: Foundation - COMPLETE
 ├─────────────────────────────────┤     ├─────────────────────────────────┤
 │ [X] k3s Server                  │     │ [X] k3s Agent                   │
 │     • Cluster management        │     │     • Container runtime         │
-│     • Service discovery         │     │     • Pod scheduling            │
+│                                 │     │     • Pod scheduling            │
 │                                 │     │                                 │
 │                                 │     │ [X] llama.cpp                   │
 │                                 │     │     • Phi-3.5-mini (3B)         │

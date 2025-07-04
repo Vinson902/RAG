@@ -8,6 +8,10 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
 
+This is a personal project where I'm building a Retrieval-Augmented Generation (RAG) system using Python, FastAPI, Kubernetes, Docker, and PostgreSQL. The goal is to understand how RAG systems are built from the ground up.
+
+⚠️ Note: This is a work-in-progress. Expect broken code and unfinished features as I explore, experiment, and improve.
+
 ## Project Objectives
 - **Master distributed AI systems** by building from scratch with commodity hardware
 - **Develop Kubernetes expertise** through hands-on cluster management and orchestration
